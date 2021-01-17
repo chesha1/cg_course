@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>ThreeJS Caustics</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+
+
+  <script src="https://cdn.jsdelivr.net/npm/three@v0.117.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@v0.117.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@v0.117.0/examples/js/loaders/OBJLoader.js"></script>
+
+</head>
+
+<body>
+
+  <canvas id="canvas" width="1920px" height="1080px" style=""></canvas>
+  <script type="text/javascript">
+
+    // const stats = new Stats();
+    // stats.showPanel(0);
+    // document.body.appendChild(stats.domElement);
+
+    //初始化Canvas画布
+    const canvas = document.getElementById('canvas');
+    const width = canvas.width;
+    const height = canvas.height;
+    var keyboard = {};
+    var texture;
+    const waterPosition = new THREE.Vector3(0, 0, 0.8);
+    const near = 0.;
+    const far = 2.;
+    const waterSize = 512;
+    // 设置颜色
+    const black = new THREE.Color('black');
+    const white = new THREE.Color('white');
+
+    function loadFile(filename) {
+      return new Promise((resolve, reject) => {
+        const loader = new THREE.FileLoader();
+
+        loader.load(filename, (data) => {
+          resolve(data);
+        });
+      });
+    }
+    
+    // 创建场景、相机
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, width / height, 0.000001, 100);
+    camera.position.set(-0.5, -0.5, 1);
+    camera.up.set(0, 0, 1);
+    scene.add(camera);
+
+    // 天空盒子
+    const floorGeometry = new THREE.PlaneBufferGeometry(100, 100, 1, 1);
+    const cubetextureloader = new THREE.CubeTextureLoader();
+    const skybox = cubetextureloader.load([
+      './assets/TropicalSunnyDay_px.jpg', './assets/TropicalSunnyDay_nx.jpg',
+      './assets/TropicalSunnyDay_py.jpg', './assets/TropicalSunnyDay_ny.jpg',
+      './assets/TropicalSunnyDay_pz.jpg', './assets/TropicalSunnyDay_nz.jpg',
+    ]);
+
+    scene.background = skybox;
+
+
+    //添加灯光
+     
+    const light = [0., 0., -1.];
+    const lightCamera = new THREE.OrthographicCamera(-1.2, 1.2, 1.2, -1.2, near, far);
+    lightCamera.position.set(0., 0., 1.5);
+    lightCamera.lookAt(0, 0, 0);
+
+    hemiLight = new THREE.HemisphereLight(0x00ffff, 0x00ffff, 0.6);
+    hemiLight.color.setHSL(0.6, 1, 0.6);
+    hemiLight.groundColor.setHSL(0.095, 1, 0.75);
+    hemiLight.position.set(0, 5, 0);
+    scene.add(hemiLight);
+
+    var light1 = new THREE.HemisphereLight(0xa0a0a0, 0x444444);
+    light1.position.set(0, 2, 0);
+    scene.add(light1);
+    var light2 = new THREE.DirectionalLight(0x040404);
+    light2.position.set(0, 2, 100);
+    light2.castShadow = true;
+    light2.shadow.camera.top = 1800;
+    light2.shadow.camera.bottom = - 1000;
+    light2.shadow.camera.left = - 1200;
+    light2.shadow.camera.right = 1200;
+    scene.add(light2);
+
+
+     // 添加第一个正方体及纹理
+    cubeTexture1 = new THREE.CubeTextureLoader().load(
+      './assets/TropicalSunnyDay_px.jpg', './assets/TropicalSunnyDay_nx.jpg',
+      './assets/TropicalSunnyDay_py.jpg', './assets/TropicalSunnyDay_ny.jpg',
+      './assets/TropicalSunnyDay_pz.jpg', './assets/TropicalSunnyDay_nz.jpg');
+    // textureCube.encoding = THREE.sRGBEncoding;
+
+    var cubeGeo1 = new THREE.BoxBufferGeometry(0.040, 0.04, 0.04);
+    var cubeMaterial1 = new THREE.MeshLambertMaterial({ envMap: cubeTexture1 });
+    var cubeMesh1 = new THREE.Mesh(cubeGeo1, cubeMaterial1);
+    cubeMesh1.position.set(0, 0.2, 0.85);
+    scene.add(cubeMesh1);
+
+
+    // 添加第二个正方体及纹理
+    var textureLoader = new THREE.TextureLoader();
+    var cubeTexture2 = textureLoader.load('./assets/pika.jpg');
+    // texture.wrapS = THREE.RepeatWrapping;
+    // texture.wrapT = THREE.RepeatWrapping;
+    // texture.repeat.x = 3;
+    // texture.repeat.y = 3;
+    var cubeGeo2 = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+    //var cubeMa2 = new THREE.MeshBasicMaterial({ color: 0x00fff0 });
+    var tubeMaterial2 = new THREE.MeshLambertMaterial({map: cubeTexture2});
+    var cubMesh2 = new THREE.Mesh(cubeGeo2, tubeMaterial2);
+    cubMesh2.position.set(0, 0, 0.85);
+    scene.add(cubMesh2);
+
+    // 渲染画布参数
+    const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+    renderer.setSize(width, height);
+    renderer.autoClear = false;
+
+    // 场景控制参数
+    const controls = new THREE.OrbitControls(
+      camera,
+      canvas
+    );
+    
+  
+
+   // 控制参数关联
+    controls.target = waterPosition;
+    const temporaryRenderTarget = new THREE.WebGLRenderTarget(width, height);
+    const clock = new THREE.Clock();
+
+    // 添加射线检测，模拟鼠标触碰生成水面波纹
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const targetgeometry = new THREE.PlaneGeometry(2, 2);
+    for (let vertex of targetgeometry.vertices) {
+      vertex.z = waterPosition.z;
+    }
+    const targetmesh = new THREE.Mesh(targetgeometry);
+
+    // 水面几何体
+    const waterGeometry = new THREE.PlaneBufferGeometry(2, 2, waterSize, waterSize);
+    const vertices = new Float32Array([
+      -1, -1, -1,
+      -1, -1, 1,
+      -1, 1, -1,
+      -1, 1, 1,
+      1, -1, -1,
+      1, 1, -1,
+      1, -1, 1,
+      1, 1, 1,
+      -1, -1, -1,
+      1, -1, -1,
+      -1, -1, 1,
+      1, -1, 1,
+      -1, 1, -1,
+      -1, 1, 1,
+      1, 1, -1,
+      1, 1, 1,
+      -1, -1, -1,
+      -1, 1, -1,
+      1, -1, -1,
+      1, 1, -1,
+      -1, -1, 1,
+      1, -1, 1,
+      -1, 1, 1,
+      1, 1, 1
+    ]);
+    const indices = new Uint32Array([
+      0, 1, 2,
+      2, 1, 3,
+      4, 5, 6,
+      6, 5, 7,
+      12, 13, 14,
+      14, 13, 15,
+      16, 17, 18,
+      18, 17, 19,
+      20, 21, 22,
+      22, 21, 23
+    ]);
+
+    //水面模拟
+    class WaterSimulation {
+
+      constructor() {
+        this._camera = new THREE.OrthographicCamera(0, 1, 1, 0, 0, 2000);
+        this._geometry = new THREE.PlaneBufferGeometry(2, 2);
+        this._targetA = new THREE.WebGLRenderTarget(waterSize, waterSize, { type: THREE.FloatType });
+        this._targetB = new THREE.WebGLRenderTarget(waterSize, waterSize, { type: THREE.FloatType });
+        this.target = this._targetA;
+
+        //加载模拟数据
+        const shadersPromises = [
+          loadFile('shaders/simulation/vertex.glsl'),
+          loadFile('shaders/simulation/drop_fragment.glsl'),
+          loadFile('shaders/simulation/update_fragment.glsl'),
+        ];
+
+        //promise
+        this.loaded = Promise.all(shadersPromises)
+          .then(([vertexShader, dropFragmentShader, updateFragmentShader]) => {
+            const dropMaterial = new THREE.RawShaderMaterial({
+              uniforms: {
+                center: { value: [0, 0] },
+                radius: { value: 0 },
+                strength: { value: 0 },
+                texture: { value: null },
+              },
+              vertexShader: vertexShader,
+              fragmentShader: dropFragmentShader,
+            });
+
+            const updateMaterial = new THREE.RawShaderMaterial({
+              uniforms: {
+                delta: { value: [1 / 216, 1 / 216] },  // TODO: Remove this useless uniform and hardcode it in shaders?
+                texture: { value: null },
+              },
+              vertexShader: vertexShader,
+              fragmentShader: updateFragmentShader,
+            });
+
+            this._dropMesh = new THREE.Mesh(this._geometry, dropMaterial);
+            this._updateMesh = new THREE.Mesh(this._geometry, updateMaterial);
+          });
+      }
+
+      // 在(x, y)坐标添加滴水效果
+      addDrop(renderer, x, y, radius, strength) {
+        this._dropMesh.material.uniforms['center'].value = [x, y];
+        this._dropMesh.material.uniforms['radius'].value = radius;
+        this._dropMesh.material.uniforms['strength'].value = strength;
+
+        this._render(renderer, this._dropMesh);
+      }
+
+      stepSimulation(renderer) {
+        this._render(renderer, this._updateMesh);
+      }
+      //渲染 
+      _render(renderer, mesh) {
+        // Swap textures
+        const _oldTarget = this.target;
+        const _newTarget = this.target === this._targetA ? this._targetB : this._targetA;
+
+        const oldTarget = renderer.getRenderTarget();
+
+        renderer.setRenderTarget(_newTarget);
+
+        mesh.material.uniforms['texture'].value = _oldTarget.texture;
+
+        // TODO Camera is useless here, what should be done?
+        renderer.render(mesh, this._camera);
+
+        renderer.setRenderTarget(oldTarget);
+
+        this.target = _newTarget;
+      }
+
+    }
+
+    //水体模拟
+    class Water {
+
+      constructor() {
+        this.geometry = waterGeometry;
+
+        const shadersPromises = [
+          loadFile('shaders/water/vertex.glsl'),
+          loadFile('shaders/water/fragment.glsl')
+        ];
+
+        this.loaded = Promise.all(shadersPromises)
+          .then(([vertexShader, fragmentShader]) => {
+            this.material = new THREE.ShaderMaterial({
+              uniforms: {
+                light: { value: light },
+                water: { value: null },
+                envMap: { value: null },
+                skybox: { value: skybox },
+              },
+              vertexShader: vertexShader,
+              fragmentShader: fragmentShader,
+            });
+            this.material.extensions = {
+              derivatives: true
+            };
+
+            this.mesh = new THREE.Mesh(this.geometry, this.material);
+            //this.mesh .scale.set(10,10,1)
+            this.mesh.position.set(waterPosition.x, waterPosition.y, waterPosition.z);
+          });
+      }
+
+      setHeightTexture(waterTexture) {
+        this.material.uniforms['water'].value = waterTexture;
+      }
+
+      setEnvMapTexture(envMap) {
+        this.material.uniforms['envMap'].value = envMap;
+      }
+
+    }
+
+    //环境贴图
+    class EnvironmentMap {
+
+      constructor() {
+        this.size = 1024;
+        this.target = new THREE.WebGLRenderTarget(this.size, this.size, { type: THREE.FloatType });
+
+        const shadersPromises = [
+          loadFile('shaders/environment_mapping/vertex.glsl'),
+          loadFile('shaders/environment_mapping/fragment.glsl')
+        ];
+
+        this._meshes = [];
+
+        this.loaded = Promise.all(shadersPromises)
+          .then(([vertexShader, fragmentShader]) => {
+            this._material = new THREE.ShaderMaterial({
+              vertexShader: vertexShader,
+              fragmentShader: fragmentShader,
+            });
+          });
+      }
+
+      setGeometries(geometries) {
+        this._meshes = [];
+
+        for (let geometry of geometries) {
+          this._meshes.push(new THREE.Mesh(geometry, this._material));
+        }
+      }
+
+      render(renderer) {
+        const oldTarget = renderer.getRenderTarget();
+
+        renderer.setRenderTarget(this.target);
+        renderer.setClearColor(black, 0);
+        renderer.clear();
+
+        for (let mesh of this._meshes) {
+          renderer.render(mesh, lightCamera);
+        }
+
+        renderer.setRenderTarget(oldTarget);
+      }
+
+    }
+
+    //焦散
+    class Caustics {
+
+      constructor() {
+        this.target = new THREE.WebGLRenderTarget(waterSize * 30., waterSize * 3., { type: THREE.FloatType });
+
+        this._waterGeometry = new THREE.PlaneBufferGeometry(2, 2, waterSize, waterSize);
+
+        const shadersPromises = [
+          loadFile('shaders/caustics/water_vertex.glsl'),
+          loadFile('shaders/caustics/water_fragment.glsl'),
+        ];
+
+        this.loaded = Promise.all(shadersPromises)
+          .then(([waterVertexShader, waterFragmentShader]) => {
+            this._waterMaterial = new THREE.ShaderMaterial({
+              uniforms: {
+                light: { value: light },
+                env: { value: null },
+                water: { value: null },
+                deltaEnvTexture: { value: null },
+              },
+              vertexShader: waterVertexShader,
+              fragmentShader: waterFragmentShader,
+              transparent: true,
+            });
+
+            this._waterMaterial.blending = THREE.CustomBlending;
+
+            // Set the blending so that:
+            // Caustics intensity uses an additive function
+            this._waterMaterial.blendEquation = THREE.AddEquation;
+            this._waterMaterial.blendSrc = THREE.OneFactor;
+            this._waterMaterial.blendDst = THREE.OneFactor;
+
+            // Caustics depth does not use blending, we just set the value
+            this._waterMaterial.blendEquationAlpha = THREE.AddEquation;
+            this._waterMaterial.blendSrcAlpha = THREE.OneFactor;
+            this._waterMaterial.blendDstAlpha = THREE.ZeroFactor;
+
+
+            this._waterMaterial.side = THREE.DoubleSide;
+            this._waterMaterial.extensions = {
+              derivatives: true
+            };
+
+            this._waterMesh = new THREE.Mesh(this._waterGeometry, this._waterMaterial);
+          });
+      }
+
+      setDeltaEnvTexture(deltaEnvTexture) {
+        this._waterMaterial.uniforms['deltaEnvTexture'].value = deltaEnvTexture;
+      }
+
+      setTextures(waterTexture, envTexture) {
+        this._waterMaterial.uniforms['env'].value = envTexture;
+        this._waterMaterial.uniforms['water'].value = waterTexture;
+      }
+
+      render(renderer) {
+        const oldTarget = renderer.getRenderTarget();
+
+        renderer.setRenderTarget(this.target);
+        renderer.setClearColor(black, 0);
+        renderer.clear();
+
+        renderer.render(this._waterMesh, lightCamera);
+
+        renderer.setRenderTarget(oldTarget);
+      }
+
+    }
+
+//添加环境
+    class Environment {
+
+      constructor() {
+        const shadersPromises = [
+          loadFile('shaders/environment/vertex.glsl'),
+          loadFile('shaders/environment/fragment.glsl')
+        ];
+
+        this._meshes = [];
+
+        this.loaded = Promise.all(shadersPromises).then(([vertexShader, fragmentShader]) => {
+          this._material = new THREE.ShaderMaterial({
+            uniforms: {
+              light: { value: light },
+              caustics: { value: null },
+              lightProjectionMatrix: { value: lightCamera.projectionMatrix },
+              lightViewMatrix: { value: lightCamera.matrixWorldInverse }
+            },
+            vertexShader: vertexShader,
+            fragmentShader: fragmentShader,
+          });
+        });
+      }
+
+      setGeometries(geometries) {
+        this._meshes = [];
+
+        for (let geometry of geometries) {
+          this._meshes.push(new THREE.Mesh(geometry, this._material));
+        }
+      }
+
+      updateCaustics(causticsTexture) {
+        this._material.uniforms['caustics'].value = causticsTexture;
+      }
+
+      addTo(scene) {
+        for (let mesh of this._meshes) {
+          scene.add(mesh);
+        }
+      }
+
+    }
+
+//场景中渲染水体
+    class Debug {
+
+      constructor() {
+        this._camera = new THREE.OrthographicCamera(0, 1, 1, 0, 0, 1);
+        this._geometry = new THREE.PlaneBufferGeometry();
+
+        const shadersPromises = [
+          loadFile('shaders/debug/vertex.glsl'),
+          loadFile('shaders/debug/fragment.glsl')
+        ];
+
+        this.loaded = Promise.all(shadersPromises)
+          .then(([vertexShader, fragmentShader]) => {
+            this._material = new THREE.RawShaderMaterial({
+              uniforms: {
+                texture: { value: null },
+              },
+              vertexShader: vertexShader,
+              fragmentShader: fragmentShader,
+            });
+
+            this._mesh = new THREE.Mesh(this._geometry, this._material);
+            this._material.transparent = true;
+          });
+      }
+
+      // draw(renderer, texture) {
+      //   this._material.uniforms['texture'].value = texture;
+      //
+      //   const oldTarget = renderer.getRenderTarget();
+      //
+      //   renderer.setRenderTarget(null);
+      //   renderer.render(this._mesh, this._camera);
+      //
+      //   renderer.setRenderTarget(oldTarget);
+      // }
+
+    }
+
+    const waterSimulation = new WaterSimulation();
+    const water = new Water();
+    const environmentMap = new EnvironmentMap();
+    const environment = new Environment();
+    const caustics = new Caustics();
+
+    const debug = new Debug();
+
+
+    // 主场景渲染，递归循环
+    function animate() {
+      // stats.begin();
+
+      // Update the water
+      if (clock.getElapsedTime() > 0.032) {
+        waterSimulation.stepSimulation(renderer);
+
+        const waterTexture = waterSimulation.target.texture;
+
+        water.setHeightTexture(waterTexture);
+
+        environmentMap.render(renderer);
+        const environmentMapTexture = environmentMap.target.texture;
+
+        caustics.setTextures(waterTexture, environmentMapTexture);
+        caustics.render(renderer);
+        const causticsTexture = caustics.target.texture;
+
+        // debug.draw(renderer, environmentMapTexture);
+        // debug.draw(renderer, causticsTexture);
+
+        environment.updateCaustics(causticsTexture);
+
+        clock.start();
+      }
+
+      // Render everything but the refractive water
+      renderer.setRenderTarget(temporaryRenderTarget);
+      renderer.setClearColor(white, 1);
+      renderer.clear();
+
+      water.mesh.visible = false;
+      renderer.render(scene, camera);
+
+      water.setEnvMapTexture(temporaryRenderTarget.texture);
+
+      // Then render the final scene with the refractive water
+      renderer.setRenderTarget(null);
+      renderer.setClearColor(white, 1);
+      renderer.clear();
+
+      water.mesh.visible = true;
+      renderer.render(scene, camera);
+
+      controls.update();
+
+      // stats.end();
+      //键盘控制
+      if (keyboard[65]) {
+        cub2.position.y -= 0.001;
+        sphereMesh.position.y -= 0.001;
+      }
+      if (keyboard[68]) {
+        cub2.position.y += 0.001;
+        sphereMesh.position.y += 0.001;
+      }
+      if (keyboard[87]) {
+        cub2.position.x -= 0.001;
+        sphereMesh.position.x -= 0.001;
+      }
+      if (keyboard[83]) {
+        cub2.position.x += 0.001;
+        sphereMesh.position.x += 0.001;
+      }
+      window.requestAnimationFrame(animate);
+    }
+
+    function onMouseMove(event) {
+      const rect = canvas.getBoundingClientRect();
+
+      mouse.x = (event.clientX - rect.left) * 2 / width - 1;
+      mouse.y = - (event.clientY - rect.top) * 2 / height + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObject(targetmesh);
+
+      for (let intersect of intersects) {
+        waterSimulation.addDrop(renderer, intersect.point.x, intersect.point.y, 0.003, 0.002);
+      }
+    }
+
+    const loaded = [
+      waterSimulation.loaded,
+      water.loaded,
+      environmentMap.loaded,
+      environment.loaded,
+      caustics.loaded,
+      debug.loaded,
+     
+    ];
+    //监听键盘
+    window.addEventListener('keydown', keydown);
+    window.addEventListener('keyup', keyUp);
+    function keydown(event) { keyboard[event.keyCode] = true; };
+    function keyUp(event) { keyboard[event.keyCode] = false; };
+
+    //全部完成初始化后响应
+    Promise.all(loaded).then(() => {    
+      const envGeometries = [floorGeometry];
+      environmentMap.setGeometries(envGeometries);
+      environment.setGeometries(envGeometries);
+
+      environment.addTo(scene);
+      scene.add(water.mesh);
+
+      caustics.setDeltaEnvTexture(1. / environmentMap.size);
+
+      canvas.addEventListener('mousemove', { handleEvent: onMouseMove });
+
+      for (var i = 0; i < 5; i++) {
+        waterSimulation.addDrop(
+          renderer,
+          Math.random() * 2 - 1, Math.random() * 2 - 1,
+          0.03, (i & 1) ? 0.02 : -0.02
+        );
+      }
+
+      animate();
+    });
+
+  </script>
+</body>
+
+</html>
