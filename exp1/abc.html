@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<html>
+
+<style>
+    .dropdown {
+        position: relative;
+        display: inline-block;
+    }
+    .dropdown-content {
+        display: none;
+        position: absolute;
+        background-color: #f9f9f9;
+        min-width: 160px;
+        box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+        padding: 12px 16px;
+    }
+    .dropdown:hover .dropdown-content {
+        display: block;
+    }
+</style>
+<body>
+
+<div class="dropdown">
+    <span>菜单</span>
+    <div class="dropdown-content">
+        <p>图形学实验</p>
+    </div>
+</div>
+<p></p>
+<canvas id="webgl" width="400" height="400">
+    Please use a browser that supports "canvas"
+</canvas>
+
+<script src="./lib/webgl-utils.js"></script>
+<script src="./lib/webgl-debug.js"></script>
+<script src="./lib/cuon-utils.js"></script>
+
+
+
+<p> <br><br><br><br><br></p>
+
+<input type="text" onkeydown="return noNumbers(event)" />
+
+
+</body>
+
+
+<script type="text/javascript">
+    var loc_x=200;
+    var loc_y=200;
+
+    var tags=0;//0在地上，1在空中
+    var keynum;
+    function noNumbers(e)
+    {
+        var keynum;
+
+
+        keynum = window.event ? e.keyCode : e.which;
+        //左键37，右键39，空格32
+        if(keynum==37)
+        {
+            window.loc_x=window.loc_x-10;
+        }
+        if(keynum==39)
+        {
+            window.loc_x=window.loc_x+10;
+        }
+        if(keynum==32)
+        {
+            window.loc_y=window.loc_y-10;
+            setTimeout(function(){ window.loc_y=window.loc_y+10; }, 200);
+        }
+
+
+    }
+
+    function sleep(d){
+        for(var t = Date.now();Date.now() - t <= d;);
+    }
+
+
+
+
+
+    var canvas = document.getElementById('webgl');
+    var currentAngle = [0.0, 0.0];
+    initEventHandles(canvas, currentAngle);
+
+    //监听键盘
+    function initEventHandles(domElement, currentAngle) {
+
+        var dragging = false;
+
+        var lastX = -1;
+        var lastY = -1;
+
+        // 添加事件监听的dom元素
+        domElement = (domElement !== undefined) ? domElement : document;
+
+        // 角度默认值位0.0
+        currentAngle = (currentAngle !== undefined) ? currentAngle : [0.0, 0.0];
+
+        // 鼠标按下事件
+        domElement.onmousedown = function (event) {
+
+            event.preventDefault();
+
+            // 鼠标点击位置
+
+            var x = event.clientX;
+            var y = event.clientY;
+
+            lastX = x;
+            lastY = y;
+
+            dragging = true;
+
+            console.log(GL_ARRAY_BUFFER);
+
+        }
+
+        domElement.onmouseleave = function (event) {
+
+            event.preventDefault();
+            dragging = false;
+            // document.getElementById("demo2").innerHTML = dragging;
+
+        }
+
+        // 鼠标抬起事件
+        domElement.onmouseup = function (event) {
+
+            event.preventDefault();
+            dragging = false;
+            // document.getElementById("demo2").innerHTML = dragging;
+
+        }
+
+        // 鼠标移动事件
+        domElement.onmousemove = function (event) {
+
+            event.preventDefault();
+            if(dragging) {
+                var x = event.clientX, y = event.clientY;
+                window.loc_x = x;
+                window.loc_y = y;
+            }
+
+            if(dragging){
+                var dx=(x-lastX)/200;
+                var dy=(lastY-y)/200;
+            }
+
+            lastX = x, lastY = y;
+        }
+
+    }
+
+
+
+
+    //绘制物体部分
+    var VSHADER_SOURCE='attribute vec4 position;'+
+        'varying vec4 a_color;attribute vec4 g_color;'+
+        'void main(){'+
+        'gl_Position=position;'+
+        'gl_PointSize=10.0;'+
+        'a_color=g_color;}'
+
+    var FSHADER_SOURCE='precision mediump float;\n'+//指定精度
+        'varying vec4 a_color;\n'+
+        'void main() { \n'+
+        'gl_FragColor = a_color;\n'+
+        '}\n'
+    function main(){
+
+
+        var canvas=document.getElementById('webgl');
+        var gl=getWebGLContext(canvas);
+
+
+        initShaders(gl,VSHADER_SOURCE,FSHADER_SOURCE);//初始化
+
+        var position=gl.getAttribLocation(gl.program,'position');
+
+        var color=gl.getAttribLocation(gl.program,'g_color');
+
+        //设置3组数据，每组前两个数位坐标，后三个数为颜色值
+        temp=[-0.1+(loc_x-200)/200,0.2,136.0/255.0,82.0/255.0,22.0/255.0,
+            -0.25,0.35,136.0/255.0,82.0/255.0,22.0/255.0,
+            -0.5,0.0,136.0/255.0,82.0/255.0,22.0/255.0,//左耳朵
+            0.1,0.2,136.0/255.0,82.0/255.0,22.0/255.0,
+            0.25,0.35,136.0/255.0,82.0/255.0,22.0/255.0,
+            0.5,0.0,136.0/255.0,82.0/255.0,22.0/255.0];
+
+        var time=6;
+        for(var theta=0;theta<360;theta++)
+        {
+            temp.push(0.0-0.25);temp.push(0.0);
+            temp.push(205/255.0);
+            temp.push(165/255.0);
+            temp.push(106/255.0);//第一个点
+            temp.push(0.35*Math.cos(theta/360*2*Math.PI));
+            temp.push(0.3*Math.sin(theta/360*2*Math.PI));
+            temp.push(205/255.0);
+            temp.push(165/255.0);
+            temp.push(106/255.0);//第二个点
+            temp.push(0.35*Math.cos((theta+1)/360*2*Math.PI));
+            temp.push(0.3*Math.sin((theta+1)/360*2*Math.PI));
+            temp.push(205/255.0);
+            temp.push(165/255.0);
+            temp.push(106/255.0);//第三个点
+            time=time+3;
+
+        }
+
+
+        var data=new Float32Array(temp);
+
+
+
+        var FSIZE=data.BYTES_PER_ELEMENT;
+
+        var buffer1=gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER,buffer1);
+        gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+        gl.vertexAttribPointer(position,2,gl.FLOAT,false,5*FSIZE,0);
+        gl.enableVertexAttribArray(position)
+
+
+        gl.vertexAttribPointer(color,3,gl.FLOAT,false,FSIZE*5,FSIZE*2);
+        gl.enableVertexAttribArray(color)
+
+        gl.clearColor(0.0,0.0,0.0,0.0);
+
+        gl.clear(gl.COLOR_BUFFER_BIT)
+
+        var tick = function() {
+
+            draw(gl, time);
+            requestAnimationFrame(tick, canvas);
+        };
+        tick();
+
+    }
+
+
+    function draw(gl, time) {
+
+        //根据键盘直接修改顶点数据
+        temp=[-0.1+(loc_x-200)/200,0.2+(200-loc_y)/200,136.0/255.0,82.0/255.0,22.0/255.0,
+            -0.25+(loc_x-200)/200,0.35+(200-loc_y)/200,136.0/255.0,82.0/255.0,22.0/255.0,
+            -0.5+(loc_x-200)/200,0.0+(200-loc_y)/200,136.0/255.0,82.0/255.0,22.0/255.0,//左耳朵
+            0.1+(loc_x-200)/200,0.2+(200-loc_y)/200,136.0/255.0,82.0/255.0,22.0/255.0,
+            0.25+(loc_x-200)/200,0.35+(200-loc_y)/200,136.0/255.0,82.0/255.0,22.0/255.0,
+            0.5+(loc_x-200)/200,0.0+(200-loc_y)/200,136.0/255.0,82.0/255.0,22.0/255.0];
+
+        var time=6;
+        for(var theta=0;theta<360;theta++)
+        {
+            temp.push(0.0-0.25+(loc_x-200)/200);temp.push(0.0+(200-loc_y)/200);
+            temp.push(205/255.0);
+            temp.push(165/255.0);
+            temp.push(106/255.0);//第一个点
+            temp.push(0.35*Math.cos(theta/360*2*Math.PI)+(loc_x-200)/200);
+            temp.push(0.3*Math.sin(theta/360*2*Math.PI)+(200-loc_y)/200);
+            temp.push(205/255.0);
+            temp.push(165/255.0);
+            temp.push(106/255.0);//第二个点
+            temp.push(0.35*Math.cos((theta+1)/360*2*Math.PI)+(loc_x-200)/200);
+            temp.push(0.3*Math.sin((theta+1)/360*2*Math.PI)+(200-loc_y)/200);
+            temp.push(205/255.0);
+            temp.push(165/255.0);
+            temp.push(106/255.0);//第三个点
+            time=time+3;
+
+        }
+        var data=new Float32Array(temp);
+        gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+
+
+        gl.drawArrays(gl.TRIANGLES,0,time);
+
+
+
+
+
+    }
+    main();
+
+
+
+</script>
+
+
+</html>
